@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────────
 # ⚠️ 쿠키 만료되면 여기만 새로 붙여넣으면 돼요!
 # ─────────────────────────────────────────────
-COOKIE = "__smVisitorID=MDKPQng11UM; lang=ko_KR; savedMbrId=pascalee95; JSESSIONID=NMf1nRIxOeyYBj4B2g1UftmFMCgaOaz8RGWWUTnuMF8bEq3eTBr8xS1DgQnCsmCd.bWRjX2RvbWFpbi9tZGNvd2FwMi1tZGNhcHAxMQ==; mdc.client_session=true"
+COOKIE = "__smVisitorID=MDKPQng11UM; lang=ko_KR; savedMbrId=pascalee95; JSESSIONID=PN2pQTaDvf1i6PrriOPs5Dh8mIb9Mg32RLLozusTSgwvMQWSTeKjT0eM61LEbwya.bWRjX2RvbWFpbi9tZGNvd2FwMi1tZGNhcHAxMQ==; npPfsHost=127.0.0.1; npPfsPort=14440; mdc.client_session=true"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201030108",

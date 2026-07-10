@@ -1,16 +1,16 @@
+import os
 from sqlalchemy import create_engine, Column, String, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = "sqlite:///./etf.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres.hhbgcfnvroubdthjppfr:dltmddus123@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
 class ETFInfo(Base):
-    """ETF 기본정보"""
     __tablename__ = "etf_info"
 
     etf_code = Column(String, primary_key=True)
@@ -20,17 +20,16 @@ class ETFInfo(Base):
 
 
 class ETFHolding(Base):
-    """ETF 구성종목"""
     __tablename__ = "etf_holdings"
 
-    id = Column(String, primary_key=True)   # ETF코드_종목코드
+    id = Column(String, primary_key=True)
     etf_code = Column(String, index=True)
     etf_name = Column(String)
     stock_code = Column(String, index=True)
     stock_name = Column(String)
-    shares = Column(Float)                  # 주식수(계약수)
-    amount = Column(Float)                  # 평가금액
-    weight = Column(Float)                  # 구성비중(%)
+    shares = Column(Float)
+    amount = Column(Float)
+    weight = Column(Float)
     date = Column(String)
 
 
