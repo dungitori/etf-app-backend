@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db, ETFHolding, ETFInfo, init_db
 from typing import List
 from pydantic import BaseModel
+
 app = FastAPI(title="ETF 포트폴리오 계산기 API")
 
 app.add_middleware(
@@ -24,7 +25,7 @@ def startup():
 # ─────────────────────────────────────────────
 class ETFInput(BaseModel):
     etf_code: str
-    shares: float  # 보유 주식수
+    amount: float  # 매수금액(원)
 
 
 class PortfolioRequest(BaseModel):
@@ -37,7 +38,7 @@ class PortfolioRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "ETF 포트폴리오 계산기 API 🚀"}
+    return {"message": "ETF 포트폴리오 계산기 API"}
 
 
 @app.get("/etfs")
@@ -73,22 +74,16 @@ def get_etf_holdings(etf_code: str, db: Session = Depends(get_db)):
     """ETF 구성종목 조회"""
     holdings = db.query(ETFHolding).filter(
         ETFHolding.etf_code == etf_code
-    ).all()
+    ).order_by(ETFHolding.weight.desc()).all()
     if not holdings:
         raise HTTPException(status_code=404, detail="ETF를 찾을 수 없어요")
-
-    total_shares = sum(h.shares for h in holdings if h.shares)
-
     return {
         "etf_code": etf_code,
         "etf_name": holdings[0].etf_name,
-        "total_shares": total_shares,
         "holdings": [
             {
                 "stock_code": h.stock_code,
                 "stock_name": h.stock_name,
-                "shares": h.shares,
-                "amount": h.amount,
                 "weight": h.weight,
             }
             for h in holdings
@@ -100,38 +95,25 @@ def get_etf_holdings(etf_code: str, db: Session = Depends(get_db)):
 def calculate_portfolio(request: PortfolioRequest, db: Session = Depends(get_db)):
     """
     포트폴리오 계산
-    ETF 코드 + 내가 가진 주식수 입력
-    → 종목별 보유금액 계산
-
-    계산 방식:
-    - ETF 전체 주식수 합계 = DB에서 조회
-    - 내 비율 = 내 주식수 / ETF 전체 주식수
-    - 종목별 보유금액 = 종목 평가금액 × 내 비율
+    ETF 코드 + 매수금액(원) 입력
+    → 종목별 보유금액 및 비중 계산 (구성비중 기반)
     """
-    result = {}  # stock_code -> {stock_name, holding_amount}
+    result = {}
 
     for etf_input in request.etfs:
         code = etf_input.etf_code
-        my_shares = etf_input.shares
+        my_amount = etf_input.amount
 
         # 구성종목 조회
         holdings = db.query(ETFHolding).filter(ETFHolding.etf_code == code).all()
         if not holdings:
             continue
 
-        # ETF 전체 주식수 합계
-        total_shares = sum(h.shares for h in holdings if h.shares)
-        if total_shares == 0:
-            continue
-
-        # 내 보유 비율
-        my_ratio = my_shares / total_shares
-
         for h in holdings:
-            if not h.amount:
+            if not h.weight:
                 continue
 
-            holding_amount = h.amount * my_ratio
+            holding_amount = my_amount * h.weight / 100
 
             if h.stock_code in result:
                 result[h.stock_code]["holding_amount"] += holding_amount
