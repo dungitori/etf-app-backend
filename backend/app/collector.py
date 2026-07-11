@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────────
 # ⚠️ 쿠키 만료되면 여기만 새로 붙여넣으면 돼요!
 # ─────────────────────────────────────────────
-COOKIE = "__smVisitorID=MDKPQng11UM; lang=ko_KR; savedMbrId=pascalee95; JSESSIONID=PN2pQTaDvf1i6PrriOPs5Dh8mIb9Mg32RLLozusTSgwvMQWSTeKjT0eM61LEbwya.bWRjX2RvbWFpbi9tZGNvd2FwMi1tZGNhcHAxMQ==; npPfsHost=127.0.0.1; npPfsPort=14440; mdc.client_session=true"
+COOKIE = "__smVisitorID=MDKPQng11UM; lang=ko_KR; savedMbrId=pascalee95; npPfsHost=127.0.0.1; npPfsPort=14440; _ga=GA1.1.257228273.1783735204; JSESSIONID=xo1SlZe1gnYaOmmEbWcHq001OyaEyzYZXecRzWpMuMBJZNIGT7nAG9m9VVQLUyO9.bWRjX2RvbWFpbi9tZGNvd2FwMS1tZGNhcHAxMQ==; _ga_Z6N0DBVT2W=GS2.1.s1783735204$o1$g0$t1783735214$j50$l0$h0; mdc.client_session=true"
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201030108",
@@ -16,7 +17,6 @@ HEADERS = {
 
 DELAY = 0.7
 
-# 제외할 키워드 (해외 ETF, 채권, 파생상품 등)
 EXCLUDE = [
     "미국", "중국", "일본", "인도", "베트남", "유럽", "글로벌",
     "선진국", "신흥국", "차이나", "나스닥", "달러", "엔", "라틴",
@@ -28,7 +28,6 @@ EXCLUDE = [
 
 
 def get_trading_date():
-    """최근 거래일 조회 (주말이면 금요일로)"""
     today = datetime.today()
     if today.weekday() == 5:
         today = today - timedelta(days=1)
@@ -38,7 +37,6 @@ def get_trading_date():
 
 
 def get_isin_map(trd_dd):
-    """전체 ETF 목록 + ISIN 조회"""
     url = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
     payload = {
         "bld": "dbms/MDC/STAT/standard/MDCSTAT04601",
@@ -60,7 +58,6 @@ def get_isin_map(trd_dd):
 
 
 def get_holdings(isin, code, trd_dd, name=""):
-    """ETF 구성종목 조회 - 주식수 + 평가금액 + 비중 포함"""
     url = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
     payload = {
         "bld": "dbms/MDC/STAT/standard/MDCSTAT05001",
@@ -78,32 +75,40 @@ def get_holdings(isin, code, trd_dd, name=""):
     try:
         res = requests.post(url, data=payload, headers=HEADERS, timeout=15)
         rows = res.json().get("output", [])
+
+        # 첫 번째 row의 키값 확인 (디버깅용)
+        if rows and code == "069500":
+            print(f"\n  [디버그] 키값: {list(rows[0].keys())}")
+            print(f"  [디버그] 첫번째 row: {rows[0]}")
+
         result = []
         for r in rows:
             stock_code = r.get("COMPST_ISU_CD", "").strip()
             if not stock_code:
                 continue
 
-            # 주식수
             shares_str = r.get("COMPST_ISU_CU1_SHRS", "0") or "0"
             try:
                 shares = float(shares_str.replace(",", ""))
             except:
                 shares = 0.0
 
-            # 평가금액
             amount_str = r.get("COMPST_AMT", "0") or "0"
             try:
                 amount = float(amount_str.replace(",", ""))
             except:
                 amount = 0.0
 
-            # 구성비중
-            weight_str = r.get("COMPST_RTO", "0") or "0"
-            try:
-                weight = float(weight_str.replace(",", ""))
-            except:
-                weight = 0.0
+            # 비중 키값 여러 개 시도
+            weight = 0.0
+            for key in ["COMPST_RTO", "COMPST_RT", "compst_rt", "compst_rto", "COMPST_WGHT", "VALU_AMT_WGHT"]:
+                val = r.get(key, "")
+                if val and val != "":
+                    try:
+                        weight = float(str(val).replace(",", ""))
+                        break
+                    except:
+                        pass
 
             result.append({
                 "stock_code": stock_code,
@@ -113,17 +118,16 @@ def get_holdings(isin, code, trd_dd, name=""):
                 "weight": weight,
             })
         return result
-    except:
+    except Exception as e:
+        print(f"  오류: {e}")
         return []
 
 
-def collect_and_save(etf_codes: list, trd_dd: str):
-    """ETF 구성종목 수집 후 DB 저장"""
+def collect_and_save(etf_codes, trd_dd):
     init_db()
     db = SessionLocal()
 
-    print(f"\n🔍 구성종목 수집 시작 ({len(etf_codes)}개)...\n")
-
+    print(f"\n구성종목 수집 시작 ({len(etf_codes)}개)...\n")
     isin_map = get_isin_map(trd_dd)
 
     for i, code in enumerate(etf_codes):
@@ -134,7 +138,6 @@ def collect_and_save(etf_codes: list, trd_dd: str):
 
         print(f"  [{i+1}/{len(etf_codes)}] {code} {info['name']:<35}", end=" ")
 
-        # ETF 기본정보 저장
         try:
             etf = db.query(ETFInfo).filter(ETFInfo.etf_code == code).first()
             if etf:
@@ -150,7 +153,6 @@ def collect_and_save(etf_codes: list, trd_dd: str):
         except:
             pass
 
-        # 구성종목 저장
         holdings = get_holdings(info["isin"], code, trd_dd, info["name"])
         print(f"→ {len(holdings)}개" if holdings else "→ 데이터 없음")
 
@@ -175,23 +177,22 @@ def collect_and_save(etf_codes: list, trd_dd: str):
         time.sleep(DELAY)
 
     db.close()
-    print("\n✅ 완료!")
+    print("\n완료!")
 
 
 if __name__ == "__main__":
     trd_dd = get_trading_date()
-    print(f"📅 기준일: {trd_dd}")
+    print(f"기준일: {trd_dd}")
 
-    print("📋 ETF 목록 조회 중...")
+    print("ETF 목록 조회 중...")
     isin_map = get_isin_map(trd_dd)
-    print(f"   → 전체 {len(isin_map)}개 ETF")
+    print(f"전체 {len(isin_map)}개 ETF")
 
-    # 국내 주식형 ETF만 필터링
     stock_codes = []
     for code, info in isin_map.items():
         name = info["name"]
         if not any(kw in name for kw in EXCLUDE):
             stock_codes.append(code)
 
-    print(f"   → 국내 주식형 ETF: {len(stock_codes)}개")
+    print(f"국내 주식형 ETF: {len(stock_codes)}개")
     collect_and_save(stock_codes, trd_dd)
