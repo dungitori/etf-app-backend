@@ -1,12 +1,16 @@
+import os
 import requests
 import time
+from dotenv import load_dotenv
 from database import ETFHolding, ETFInfo, init_db, SessionLocal
 from datetime import datetime, timedelta
 
+load_dotenv()
+
 # ─────────────────────────────────────────────
-# ⚠️ 쿠키 만료되면 여기만 새로 붙여넣으면 돼요!
+# ⚠️ 쿠키 만료되면 .env 파일의 KRX_COOKIE 값만 새로 바꾸면 돼요!
 # ─────────────────────────────────────────────
-COOKIE = "__smVisitorID=MDKPQng11UM; lang=ko_KR; savedMbrId=pascalee95; npPfsHost=127.0.0.1; npPfsPort=14440; _ga=GA1.1.257228273.1783735204; JSESSIONID=xo1SlZe1gnYaOmmEbWcHq001OyaEyzYZXecRzWpMuMBJZNIGT7nAG9m9VVQLUyO9.bWRjX2RvbWFpbi9tZGNvd2FwMS1tZGNhcHAxMQ==; _ga_Z6N0DBVT2W=GS2.1.s1783735204$o1$g0$t1783735214$j50$l0$h0; mdc.client_session=true"
+COOKIE = os.environ["KRX_COOKIE"]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
