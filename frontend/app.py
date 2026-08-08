@@ -11,6 +11,17 @@ st.set_page_config(page_title="ETF 포트폴리오 계산기", page_icon="📊")
 st.title("📊 ETF 포트폴리오 계산기")
 st.caption("여러 ETF에 투자한 금액을 입력하면, 실제로 어떤 종목을 얼마나 들고 있는지 계산해드려요.")
 
+st.markdown(
+    """
+    <style>
+    div[data-testid="stHorizontalBlock"] { gap: 0.5rem; margin-bottom: -18px; align-items: center; }
+    div[data-testid="stNumberInput"] input { padding: 2px 8px; height: 30px; }
+    div[data-testid="stButton"] button { padding: 0px 10px; height: 30px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
@@ -29,8 +40,12 @@ if query:
         st.info("검색 결과가 없어요.")
 
     for etf in results[:20]:
-        col1, col2, col3 = st.columns([3, 2, 1])
-        col1.write(f"**{etf['etf_name']}** ({etf['etf_code']})")
+        col1, col2, col3 = st.columns([3, 2, 1], gap="small")
+        col1.markdown(
+            f"<div style='font-size:14px; line-height:30px;'>{etf['etf_name']} "
+            f"<span style='color:gray; font-size:12px;'>({etf['etf_code']})</span></div>",
+            unsafe_allow_html=True,
+        )
         amount = col2.number_input(
             "매수금액(원)",
             min_value=0,
