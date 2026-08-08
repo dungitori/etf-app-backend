@@ -22,18 +22,17 @@ st.markdown(
     }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
         min-width: 0;
-        width: auto;
     }
-    div[data-testid="stTextInput"] input,
-    div[data-testid="stNumberInput"] input {
+    div[data-testid="stTextInput"] input {
         padding: 2px 6px;
         height: 30px;
         font-size: 13px;
     }
     div[data-testid="stButton"] button {
-        padding: 0px 8px;
+        padding: 0px 10px;
         height: 30px;
         min-width: 0;
+        width: 100%;
     }
     </style>
     """,
@@ -53,6 +52,7 @@ def get_amount(key):
     digits = "".join(ch for ch in st.session_state.get(key, "") if ch.isdigit())
     return int(digits) if digits else 0
 
+
 st.subheader("1. ETF 검색해서 추가하기")
 query = st.text_input("ETF 이름 또는 코드로 검색 (예: kodex, 200, TIGER)")
 
@@ -71,78 +71,84 @@ if query:
         if len(results) > SHOW_LIMIT:
             st.caption(f"총 {len(results)}개 중 {SHOW_LIMIT}개만 표시돼요. 검색어를 더 구체적으로 입력하면 좁혀져요.")
 
-    for etf in results[:50]:
-        amount_key = f"amount_{etf['etf_code']}"
-        if amount_key not in st.session_state:
-            st.session_state[amount_key] = ""
+    added_codes = {item["etf_code"] for item in st.session_state.portfolio}
 
-        col1, col2, col3 = st.columns([4, 3, 1], gap="small")
+    for etf in results[:50]:
+        col1, col2 = st.columns([6, 1], gap="small")
         col1.markdown(
             f"<div style='font-size:13px; line-height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{etf['etf_name']} "
             f"<span style='color:gray; font-size:11px;'>({etf['etf_code']})</span></div>",
             unsafe_allow_html=True,
         )
-        col2.text_input(
+        already_added = etf["etf_code"] in added_codes
+        if col2.button("담김" if already_added else "+ 담기", key=f"add_{etf['etf_code']}", disabled=already_added):
+            st.session_state.portfolio.append({
+                "etf_code": etf["etf_code"],
+                "etf_name": etf["etf_name"],
+                "amount": 0,
+            })
+            st.rerun()
+
+st.subheader("2. 내가 담은 ETF 목록")
+if not st.session_state.portfolio:
+    st.write("아직 담은 ETF가 없어요. 위에서 검색해서 담아주세요.")
+else:
+    for i, item in enumerate(st.session_state.portfolio):
+        col1, col2 = st.columns([5, 1], gap="small")
+        col1.markdown(
+            f"<div style='font-size:13px; line-height:30px;'>{item['etf_name']} "
+            f"<span style='color:gray; font-size:11px;'>({item['etf_code']})</span></div>",
+            unsafe_allow_html=True,
+        )
+        if col2.button("삭제", key=f"remove_{i}"):
+            st.session_state.portfolio.pop(i)
+            st.rerun()
+
+        amount_key = f"portfolio_amount_{i}"
+        if amount_key not in st.session_state:
+            st.session_state[amount_key] = f"{item['amount']:,}" if item["amount"] else ""
+        st.text_input(
             "매수금액(원)",
             key=amount_key,
             on_change=format_amount,
             args=(amount_key,),
-            label_visibility="collapsed",
-            placeholder="금액",
+            placeholder="매수금액(원)을 입력하세요",
         )
-        if col3.button("+", key=f"add_{etf['etf_code']}"):
-            amount = get_amount(amount_key)
-            if amount > 0:
-                st.session_state.portfolio.append({
-                    "etf_code": etf["etf_code"],
-                    "etf_name": etf["etf_name"],
-                    "amount": amount,
-                })
-                st.rerun()
-            else:
-                st.warning("매수금액을 먼저 입력해주세요.")
-
-st.subheader("2. 내가 담은 ETF 목록")
-if not st.session_state.portfolio:
-    st.write("아직 추가한 ETF가 없어요.")
-else:
-    for i, item in enumerate(st.session_state.portfolio):
-        col1, col2, col3 = st.columns([3, 2, 1])
-        col1.write(f"{item['etf_name']} ({item['etf_code']})")
-        col2.write(f"{item['amount']:,}원")
-        if col3.button("삭제", key=f"remove_{i}"):
-            st.session_state.portfolio.pop(i)
-            st.rerun()
+        item["amount"] = get_amount(amount_key)
 
     if st.button("📈 포트폴리오 계산하기", type="primary"):
         payload = {
             "etfs": [
                 {"etf_code": item["etf_code"], "amount": item["amount"]}
                 for item in st.session_state.portfolio
+                if item["amount"] > 0
             ]
         }
-        try:
-            res = requests.post(f"{BACKEND_URL}/portfolio/calculate", json=payload, timeout=60)
-            result = res.json()
-        except Exception:
-            result = None
-            st.error("계산 요청이 실패했어요. (서버가 잠들어 있었다면 깨어나는 중일 수 있어요, 잠시 후 다시 시도해보세요)")
+        if not payload["etfs"]:
+            st.warning("매수금액을 입력한 ETF가 없어요.")
+        else:
+            try:
+                res = requests.post(f"{BACKEND_URL}/portfolio/calculate", json=payload, timeout=60)
+                result = res.json()
+            except Exception:
+                result = None
+                st.error("계산 요청이 실패했어요. (서버가 잠들어 있었다면 깨어나는 중일 수 있어요, 잠시 후 다시 시도해보세요)")
 
-        if result:
-            st.subheader("3. 결과: 내가 실제로 들고 있는 종목")
-            col1, col2 = st.columns(2)
-            col1.metric("총 투자금액", f"{result['total_amount']:,.0f}원")
-            col2.metric("보유 종목 수", f"{result['stock_count']}개")
-            st.dataframe(
-                [
-                    {
-                        "종목명": s["stock_name"],
-                        "종목코드": s["stock_code"],
-                        "보유금액(원)": f"{s['holding_amount']:,.0f}",
-                        "비중(%)": s["portfolio_weight"],
-                    }
-                    for s in result["stocks"]
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+            if result:
+                st.subheader("3. 결과: 내가 실제로 들고 있는 종목")
+                col1, col2 = st.columns(2)
+                col1.metric("총 투자금액", f"{result['total_amount']:,.0f}원")
+                col2.metric("보유 종목 수", f"{result['stock_count']}개")
+                st.dataframe(
+                    [
+                        {
+                            "종목명": s["stock_name"],
+                            "종목코드": s["stock_code"],
+                            "보유금액(원)": f"{s['holding_amount']:,.0f}",
+                            "비중(%)": s["portfolio_weight"],
+                        }
+                        for s in result["stocks"]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
