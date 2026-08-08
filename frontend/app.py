@@ -14,9 +14,27 @@ st.caption("여러 ETF에 투자한 금액을 입력하면, 실제로 어떤 종
 st.markdown(
     """
     <style>
-    div[data-testid="stHorizontalBlock"] { gap: 0.5rem; margin-bottom: -18px; align-items: center; }
-    div[data-testid="stNumberInput"] input { padding: 2px 8px; height: 30px; }
-    div[data-testid="stButton"] button { padding: 0px 10px; height: 30px; }
+    div[data-testid="stHorizontalBlock"] {
+        gap: 0.4rem;
+        margin-bottom: -18px;
+        align-items: center;
+        flex-wrap: nowrap !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: 0;
+        width: auto;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input {
+        padding: 2px 6px;
+        height: 30px;
+        font-size: 13px;
+    }
+    div[data-testid="stButton"] button {
+        padding: 0px 8px;
+        height: 30px;
+        min-width: 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -24,6 +42,16 @@ st.markdown(
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
+
+
+def format_amount(key):
+    digits = "".join(ch for ch in st.session_state[key] if ch.isdigit())
+    st.session_state[key] = f"{int(digits):,}" if digits else ""
+
+
+def get_amount(key):
+    digits = "".join(ch for ch in st.session_state.get(key, "") if ch.isdigit())
+    return int(digits) if digits else 0
 
 st.subheader("1. ETF 검색해서 추가하기")
 query = st.text_input("ETF 이름 또는 코드로 검색 (예: kodex, 200, TIGER)")
@@ -38,22 +66,32 @@ if query:
 
     if not results:
         st.info("검색 결과가 없어요.")
+    else:
+        SHOW_LIMIT = 50
+        if len(results) > SHOW_LIMIT:
+            st.caption(f"총 {len(results)}개 중 {SHOW_LIMIT}개만 표시돼요. 검색어를 더 구체적으로 입력하면 좁혀져요.")
 
-    for etf in results[:20]:
-        col1, col2, col3 = st.columns([3, 2, 1], gap="small")
+    for etf in results[:50]:
+        amount_key = f"amount_{etf['etf_code']}"
+        if amount_key not in st.session_state:
+            st.session_state[amount_key] = ""
+
+        col1, col2, col3 = st.columns([4, 3, 1], gap="small")
         col1.markdown(
-            f"<div style='font-size:14px; line-height:30px;'>{etf['etf_name']} "
-            f"<span style='color:gray; font-size:12px;'>({etf['etf_code']})</span></div>",
+            f"<div style='font-size:13px; line-height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{etf['etf_name']} "
+            f"<span style='color:gray; font-size:11px;'>({etf['etf_code']})</span></div>",
             unsafe_allow_html=True,
         )
-        amount = col2.number_input(
+        col2.text_input(
             "매수금액(원)",
-            min_value=0,
-            step=10000,
-            key=f"amount_{etf['etf_code']}",
+            key=amount_key,
+            on_change=format_amount,
+            args=(amount_key,),
             label_visibility="collapsed",
+            placeholder="금액",
         )
-        if col3.button("추가", key=f"add_{etf['etf_code']}"):
+        if col3.button("+", key=f"add_{etf['etf_code']}"):
+            amount = get_amount(amount_key)
             if amount > 0:
                 st.session_state.portfolio.append({
                     "etf_code": etf["etf_code"],
