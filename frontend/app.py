@@ -67,13 +67,11 @@ if query:
     if not results:
         st.info("검색 결과가 없어요.")
     else:
-        SHOW_LIMIT = 50
-        if len(results) > SHOW_LIMIT:
-            st.caption(f"총 {len(results)}개 중 {SHOW_LIMIT}개만 표시돼요. 검색어를 더 구체적으로 입력하면 좁혀져요.")
+        st.caption(f"총 {len(results)}개")
 
     added_codes = {item["etf_code"] for item in st.session_state.portfolio}
 
-    for etf in results[:50]:
+    for etf in results:
         col1, col2 = st.columns([6, 1], gap="small")
         col1.markdown(
             f"<div style='font-size:13px; line-height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{etf['etf_name']} "
