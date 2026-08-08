@@ -56,10 +56,10 @@ def get_etf_list(db: Session = Depends(get_db)):
 
 @app.get("/etfs/search")
 def search_etf(q: str, db: Session = Depends(get_db)):
-    """ETF 검색"""
+    """ETF 검색 (대소문자 구분 없음)"""
     etfs = db.query(ETFInfo).filter(
-        ETFInfo.etf_name.contains(q) | ETFInfo.etf_code.contains(q)
-    ).all()
+        ETFInfo.etf_name.ilike(f"%{q}%") | ETFInfo.etf_code.ilike(f"%{q}%")
+    ).order_by(ETFInfo.etf_name).all()
     return [
         {
             "etf_code": e.etf_code,

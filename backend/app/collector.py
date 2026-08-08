@@ -4,6 +4,7 @@ import time
 from dotenv import load_dotenv
 from database import ETFHolding, ETFInfo, init_db, SessionLocal
 from datetime import datetime, timedelta
+from pricing import build_price_krw_map
 
 load_dotenv()
 
@@ -21,14 +22,18 @@ HEADERS = {
 
 DELAY = 0.7
 
+# 주식 종목을 보유하지 않는(채권/파생 기반) 상품은 "구성종목" 개념이 없어서 제외
+# 국가/지역 ETF(미국, 중국 등)는 더 이상 제외하지 않음 - 해외종목도 pricing.py로 비중을 계산함
 EXCLUDE = [
-    "미국", "중국", "일본", "인도", "베트남", "유럽", "글로벌",
-    "선진국", "신흥국", "차이나", "나스닥", "달러", "엔", "라틴",
-    "필리핀", "멕시코", "인도네시아", "채권", "국채", "통안채",
-    "회사채", "특수채", "하이일드", "선물", "인버스", "레버리지",
-    "SOFR", "KOFR", "CD금리", "머니마켓", "단기채", "장기채",
-    "국고채", "금리",
+    "채권", "국채", "통안채", "회사채", "특수채", "하이일드",
+    "선물", "인버스", "레버리지", "SOFR", "KOFR", "CD금리",
+    "머니마켓", "단기채", "장기채", "국고채", "금리",
 ]
+
+
+def is_domestic_code(stock_code):
+    """KRX 국내 종목코드(6자리 숫자) 여부. 아니면 해외종목 ISIN으로 간주"""
+    return len(stock_code) == 6 and stock_code.isdigit()
 
 
 def get_trading_date():
@@ -80,15 +85,16 @@ def get_holdings(isin, code, trd_dd, name=""):
         res = requests.post(url, data=payload, headers=HEADERS, timeout=15)
         rows = res.json().get("output", [])
 
-        # 첫 번째 row의 키값 확인 (디버깅용)
-        if rows and code == "069500":
-            print(f"\n  [디버그] 키값: {list(rows[0].keys())}")
-            print(f"  [디버그] 첫번째 row: {rows[0]}")
-
         result = []
         for r in rows:
             stock_code = r.get("COMPST_ISU_CD", "").strip()
+            stock_name = r.get("COMPST_ISU_NM", "").strip()
             if not stock_code:
+                continue
+            # 현금성자산/예금 등 placeholder 항목은 실제 보유 "종목"이 아니라서 제외
+            # (해외종목 ETF는 실물 대신 현금으로 설정/환매되는 구조라 스케일이 달라
+            #  섞어서 비중을 계산하면 왜곡됨)
+            if stock_code.startswith("CASH") or stock_code.startswith("KRD") or "현금" in stock_name or "예금" in stock_name:
                 continue
 
             shares_str = r.get("COMPST_ISU_CU1_SHRS", "0") or "0"
@@ -116,7 +122,7 @@ def get_holdings(isin, code, trd_dd, name=""):
 
             result.append({
                 "stock_code": stock_code,
-                "stock_name": r.get("COMPST_ISU_NM", "").strip(),
+                "stock_name": stock_name,
                 "shares": shares,
                 "amount": amount,
                 "weight": weight,
@@ -127,6 +133,15 @@ def get_holdings(isin, code, trd_dd, name=""):
         return []
 
 
+def _needs_pricing(h):
+    """KRX가 금액/비중을 안 주는 해외종목 보유분인지 확인"""
+    return (
+        h["shares"] > 0
+        and h["amount"] == 0
+        and not is_domestic_code(h["stock_code"])
+    )
+
+
 def collect_and_save(etf_codes, trd_dd):
     init_db()
     db = SessionLocal()
@@ -134,13 +149,35 @@ def collect_and_save(etf_codes, trd_dd):
     print(f"\n구성종목 수집 시작 ({len(etf_codes)}개)...\n")
     isin_map = get_isin_map(trd_dd)
 
+    # 1단계: 전체 ETF의 구성종목을 먼저 메모리에 모두 모음
+    etf_holdings = {}
     for i, code in enumerate(etf_codes):
         info = isin_map.get(code)
         if not info:
             print(f"  [{i+1}/{len(etf_codes)}] {code} → ISIN 없음")
             continue
 
-        print(f"  [{i+1}/{len(etf_codes)}] {code} {info['name']:<35}", end=" ")
+        holdings = get_holdings(info["isin"], code, trd_dd, info["name"])
+        print(f"  [{i+1}/{len(etf_codes)}] {code} {info['name']:<35} → {len(holdings)}개" if holdings else f"  [{i+1}/{len(etf_codes)}] {code} {info['name']:<35} → 데이터 없음")
+        etf_holdings[code] = holdings
+        time.sleep(DELAY)
+
+    # 2단계: 해외종목(가격 정보 없는 보유분)의 ISIN을 전부 모아 한 번에 시세 조회
+    foreign_isins = set()
+    for holdings in etf_holdings.values():
+        for h in holdings:
+            if _needs_pricing(h):
+                foreign_isins.add(h["stock_code"])
+
+    price_krw_map = {}
+    if foreign_isins:
+        print(f"\n해외종목 {len(foreign_isins)}개 시세 조회 중...")
+        price_krw_map = build_price_krw_map(list(foreign_isins))
+        print(f"시세 확보: {len(price_krw_map)}/{len(foreign_isins)}개")
+
+    # 3단계: 해외종목 금액을 채우고, 필요한 ETF는 비중을 다시 계산해서 저장
+    for code, holdings in etf_holdings.items():
+        info = isin_map[code]
 
         try:
             etf = db.query(ETFInfo).filter(ETFInfo.etf_code == code).first()
@@ -157,8 +194,19 @@ def collect_and_save(etf_codes, trd_dd):
         except:
             pass
 
-        holdings = get_holdings(info["isin"], code, trd_dd, info["name"])
-        print(f"→ {len(holdings)}개" if holdings else "→ 데이터 없음")
+        recompute_weight = False
+        for h in holdings:
+            if _needs_pricing(h):
+                price = price_krw_map.get(h["stock_code"])
+                if price is not None:
+                    h["amount"] = h["shares"] * price
+                    recompute_weight = True
+
+        if recompute_weight:
+            total = sum(h["amount"] for h in holdings)
+            if total > 0:
+                for h in holdings:
+                    h["weight"] = round(h["amount"] / total * 100, 4)
 
         db.query(ETFHolding).filter(ETFHolding.etf_code == code).delete()
         for h in holdings:
@@ -178,7 +226,6 @@ def collect_and_save(etf_codes, trd_dd):
                 pass
 
         db.commit()
-        time.sleep(DELAY)
 
     db.close()
     print("\n완료!")
