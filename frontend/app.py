@@ -19,11 +19,11 @@ query = st.text_input("ETF 이름 또는 코드로 검색 (예: kodex, 200, TIGE
 
 if query:
     try:
-        res = requests.get(f"{BACKEND_URL}/etfs/search", params={"q": query}, timeout=10)
+        res = requests.get(f"{BACKEND_URL}/etfs/search", params={"q": query}, timeout=60)
         results = res.json()
     except Exception:
         results = []
-        st.error("백엔드 서버에 연결할 수 없어요.")
+        st.error("백엔드 서버에 연결할 수 없어요. (서버가 잠들어 있었다면 깨어나는 중일 수 있어요, 잠시 후 다시 검색해보세요)")
 
     if not results:
         st.info("검색 결과가 없어요.")
@@ -69,11 +69,11 @@ else:
             ]
         }
         try:
-            res = requests.post(f"{BACKEND_URL}/portfolio/calculate", json=payload, timeout=30)
+            res = requests.post(f"{BACKEND_URL}/portfolio/calculate", json=payload, timeout=60)
             result = res.json()
         except Exception:
             result = None
-            st.error("계산 요청이 실패했어요.")
+            st.error("계산 요청이 실패했어요. (서버가 잠들어 있었다면 깨어나는 중일 수 있어요, 잠시 후 다시 시도해보세요)")
 
         if result:
             st.subheader("3. 결과: 내가 실제로 들고 있는 종목")
